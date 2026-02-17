@@ -348,10 +348,17 @@
       // Initialize the app
       async function init() {
         try {
-          // Get user location
-          const position = await getUserLocation();
-          currentLat = position.coords.latitude;
-          currentLon = position.coords.longitude;
+          // Get user location or use default (Lynchburg, VA)
+          try {
+            const position = await getUserLocation();
+            currentLat = position.coords.latitude;
+            currentLon = position.coords.longitude;
+          } catch (locationError) {
+            // Default to Lynchburg, VA if geolocation fails
+            console.log("Using default location: Lynchburg, VA");
+            currentLat = 37.4138;
+            currentLon = -79.1422;
+          }
 
           // Get location name
           await getLocationName(currentLat, currentLon);
