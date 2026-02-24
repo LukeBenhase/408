@@ -257,6 +257,75 @@
         opacity: 0.8;
       }
 
+      .search-box {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      .search-input {
+        flex: 1;
+        padding: 12px 15px;
+        border: none;
+        border-radius: 25px;
+        font-size: 16px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        outline: none;
+      }
+
+      .search-input:focus {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .search-btn {
+        background: white;
+        color: #667eea;
+        border: none;
+        padding: 12px 25px;
+        border-radius: 25px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+      }
+
+      .search-btn:active {
+        transform: scale(0.98);
+      }
+
+      .search-suggestions {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1000;
+        margin-top: 5px;
+      }
+
+      .suggestion-item {
+        padding: 12px 15px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+      }
+
+      .suggestion-item:hover {
+        background: #f8f9fa;
+      }
+
+      .suggestion-item:last-child {
+        border-bottom: none;
+      }
+
+      .search-wrapper {
+        position: relative;
+      }
+
       @media (max-width: 360px) {
         .temp-display {
           font-size: 56px;
@@ -276,6 +345,21 @@
           Getting your location...
         </div>
       </header>
+
+      <!-- Search Box -->
+      <div class="search-wrapper">
+        <div class="search-box">
+          <input
+            type="text"
+            id="searchInput"
+            class="search-input"
+            placeholder="Search location (e.g., New York, London, Tokyo)..."
+            autocomplete="off"
+          />
+          <button class="search-btn" onclick="searchLocation()">Search</button>
+        </div>
+        <div id="searchSuggestions" class="search-suggestions hidden"></div>
+      </div>
 
       <div id="loadingScreen" class="loading">
         <div>🌤️</div>
@@ -344,6 +428,116 @@
 
     <script>
       let currentLat, currentLon;
+      let searchTimeout;
+
+      // Search for location by name
+      async function searchLocation() {
+        const searchInput = document.getElementById("searchInput");
+        const query = searchInput.value.trim();
+
+        if (!query) return;
+
+        try {
+          // Use Nominatim to search for location
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
+          );
+          const results = await response.json();
+
+          if (results.length > 0) {
+            const result = results[0];
+            currentLat = parseFloat(result.lat);
+            currentLon = parseFloat(result.lon);
+
+            // Update location name
+            await getLocationName(currentLat, currentLon);
+
+            // Hide suggestions
+            document.getElementById("searchSuggestions").classList.add("hidden");
+            document.getElementById("searchSuggestions").innerHTML = "";
+            searchInput.value = "";
+
+            // Reload weather data
+            await loadWeatherData();
+            initVentuskyRadar();
+            updateLastUpdated();
+          } else {
+            showError("Location not found. Please try another search.");
+          }
+        } catch (error) {
+          showError("Error searching location: " + error.message);
+        }
+      }
+
+      // Show search suggestions as user types
+      document.addEventListener("DOMContentLoaded", function () {
+        const searchInput = document.getElementById("searchInput");
+        searchInput.addEventListener("input", function () {
+          clearTimeout(searchTimeout);
+          const query = this.value.trim();
+
+          if (query.length < 2) {
+            document.getElementById("searchSuggestions").classList.add("hidden");
+            return;
+          }
+
+          searchTimeout = setTimeout(async () => {
+            try {
+              const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
+              );
+              const results = await response.json();
+              const suggestionsContainer = document.getElementById(
+                "searchSuggestions"
+              );
+              suggestionsContainer.innerHTML = "";
+
+              if (results.length > 0) {
+                results.forEach((result) => {
+                  const suggestionItem = document.createElement("div");
+                  suggestionItem.className = "suggestion-item";
+                  suggestionItem.textContent = result.display_name;
+                  suggestionItem.onclick = () => {
+                    searchInput.value = result.display_name;
+                    currentLat = parseFloat(result.lat);
+                    currentLon = parseFloat(result.lon);
+                    suggestionsContainer.classList.add("hidden");
+                    loadWeatherData();
+                    getLocationName(currentLat, currentLon);
+                    initVentuskyRadar();
+                    updateLastUpdated();
+                  };
+                  suggestionsContainer.appendChild(suggestionItem);
+                });
+                suggestionsContainer.classList.remove("hidden");
+              } else {
+                suggestionsContainer.classList.add("hidden");
+              }
+            } catch (error) {
+              console.error("Error fetching suggestions:", error);
+            }
+          }, 300);
+        });
+
+        // Close suggestions when clicking outside
+        document.addEventListener("click", function (e) {
+          if (
+            !e.target.closest(".search-wrapper") &&
+            !e.target.closest(".search-suggestions")
+          ) {
+            document.getElementById("searchSuggestions").classList.add("hidden");
+          }
+        });
+      });
+
+      // Allow Enter key to search
+      document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("searchInput").addEventListener("keypress", function (e) {
+          if (e.key === "Enter") {
+            searchLocation();
+          }
+        });
+      });
 
       // Initialize the app
       async function init() {
@@ -551,6 +745,8 @@
         warningsContainer.innerHTML = "";
 
         const warnings = [];
+
+        console.log('checking Weather Warnings')
 
         // Check current weather
         const currentCode = data.current.weather_code;
